@@ -41,5 +41,5 @@
             .hash = "prism-0.1.0-PSE12I20OAC4gr2XF_0RgEyXa0N0NvzYZyUsXI2VRkhR",
         },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    .paths = .{ "build.zig", "build.zig.zon", "lib" },
 }

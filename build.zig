@@ -5,20 +5,51 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const gpu_drivers = b.option([]const u8, "gpu-drivers", "Specific GPU drivers to enable, defaults to Prism's choice.");
+
     const root_module = b.addModule("lattice", .{
         .root_source_file = b.path("lib/lattice.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const wayland_dep = b.dependency("wayland", .{ .target = target, .optimize = optimize });
+    const wayland_dep = b.dependency("wayland", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const wayland_mod = wayland_dep.module("wayland");
-    const prism_dep = b.dependency("prism", .{ .target = target, .optimize = optimize });
-    const xkbcommon_dep = b.dependency("xkbcommon", .{ .target = target, .optimize = optimize });
-    const drm_dep = b.dependency("drm", .{ .target = target, .optimize = optimize });
-    const libseat_dep = b.dependency("libseat", .{ .target = target, .optimize = optimize });
-    const udev_dep = b.dependency("udev", .{ .target = target, .optimize = optimize });
-    const libinput_dep = b.dependency("libinput", .{ .target = target, .optimize = optimize });
+
+    const prism_dep = b.dependency("prism", .{
+        .target = target,
+        .optimize = optimize,
+        .drivers = gpu_drivers,
+    });
+
+    const xkbcommon_dep = b.dependency("xkbcommon", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const drm_dep = b.dependency("drm", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const libseat_dep = b.dependency("libseat", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const udev_dep = b.dependency("udev", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const libinput_dep = b.dependency("libinput", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const wl_protocols = b.dependency("wayland_protocols", .{});
     const wl_xml = b.dependency("wayland_xml", .{});
 

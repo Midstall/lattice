@@ -1,0 +1,45 @@
+.{
+    .name = .lattice,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0xced309c81c71db4d,
+    .dependencies = .{
+        .wayland = .{
+            .url = "git+https://github.com/Midstall/wayland.zig#2da04998e43fa3482ac89d1308ff169aab459943",
+            .hash = "wayland-0.1.0-J5KKz62TBgBeaRaECyAJ1fjUz0eZ-KPZ6Fu3XDI4Zan1",
+        },
+        .wayland_protocols = .{
+            .url = "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/1.34/wayland-protocols-1.34.tar.gz",
+            .hash = "N-V-__8AAGUECgCvb26r83EFTbeoVMkUVDHcrm1ZahgEgwlR",
+        },
+        .wayland_xml = .{
+            .url = "https://gitlab.freedesktop.org/wayland/wayland/-/archive/1.23.0/wayland-1.23.0.tar.gz",
+            .hash = "N-V-__8AAHioGABnssAnKMhn9JEkNUXymmrtMYo-qsWg_lYt",
+        },
+        .drm = .{
+            .url = "git+https://github.com/Midstall/drm.zig#25adace9df06b8b859ee52cc0832bcc4c2223c3a",
+            .hash = "drm-0.1.0-ObSCTywHAQAeCZ7R4ZAVRLD63FEkmWIQfOhnfwQwoiBF",
+        },
+        .xkbcommon = .{
+            .url = "git+https://github.com/Midstall/xkbcommon.zig#29039d1bb27c6013eec1204bc26929b790d96552",
+            .hash = "xkbcommon-0.1.0-6Tc_PWJUCADXaBS7kbPZDUu5aQqWdV0Aii0A26HM8whD",
+        },
+        .udev = .{
+            .url = "git+https://github.com/Midstall/udev.zig#3652cb0ec9d8748f047f02669ba5bd90f907401b",
+            .hash = "udev-0.1.0-ZWb7H-pMBwD_akZJWMklYh-GEI0tQmCyxeeNHzklQ2Y-",
+        },
+        .libinput = .{
+            .url = "git+https://github.com/Midstall/libinput.zig#95179ebce87291f8e4e2296c204ca20278dde57d",
+            .hash = "libinput-0.1.0-SVU4XDusAQDVLM2OfQ4hpSEuStYEVaGc7DE8buLdIe74",
+        },
+        .libseat = .{
+            .url = "git+https://github.com/Midstall/libseat.zig#395ca3c5b6c66ffe287241f66541cffe8b7de84b",
+            .hash = "libseat-0.1.0-q6LEcyXEAQApF-Trpa1IwPejAhATnE2JlKBGVXsTtL6X",
+        },
+        .prism = .{
+            .url = "git+https://github.com/Midstall/prism#6b14a3e72bf05427e8ff75335f0206d079c508f0",
+            .hash = "prism-0.1.0-PSE12I20OAC4gr2XF_0RgEyXa0N0NvzYZyUsXI2VRkhR",
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}

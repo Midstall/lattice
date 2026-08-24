@@ -90,70 +90,76 @@ pub fn build(b: *std.Build) void {
     const example_step = b.step("example-window", "Run the wayland window example");
     example_step.dependOn(&run_example.step);
 
-    const smoke = b.addExecutable(.{
-        .name = "compositor-smoke",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("example/compositor_smoke.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    smoke.root_module.addImport("lattice", root_module);
-    smoke.root_module.addImport("prism", prism_dep.module("prism"));
-    b.installArtifact(smoke);
-    const run_smoke = b.addRunArtifact(smoke);
-    const smoke_step = b.step("example-compositor-smoke", "Run the compositor smoke test");
-    smoke_step.dependOn(&run_smoke.step);
+    if (target.result.os.tag == .linux) {
+        const smoke = b.addExecutable(.{
+            .name = "compositor-smoke",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("example/compositor_smoke.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        smoke.root_module.addImport("lattice", root_module);
+        smoke.root_module.addImport("prism", prism_dep.module("prism"));
+        b.installArtifact(smoke);
 
-    const nested = b.addExecutable(.{
-        .name = "lattice-nested",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("example/nested.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    nested.root_module.addImport("lattice", root_module);
-    b.installArtifact(nested);
-    const run_nested = b.addRunArtifact(nested);
-    // Ensure lattice-window is built and installed before we run nested.
-    run_nested.step.dependOn(&b.addInstallArtifact(example, .{}).step);
-    const nested_step = b.step("example-nested", "Run the nested compositor self-host example");
-    nested_step.dependOn(&run_nested.step);
+        const run_smoke = b.addRunArtifact(smoke);
+        const smoke_step = b.step("example-compositor-smoke", "Run the compositor smoke test");
+        smoke_step.dependOn(&run_smoke.step);
 
-    const kms_demo = b.addExecutable(.{
-        .name = "lattice-kms-demo",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("example/kms_demo.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    kms_demo.root_module.addImport("lattice", root_module);
-    b.installArtifact(kms_demo);
-    const run_kms = b.addRunArtifact(kms_demo);
-    const kms_step = b.step("example-kms", "Run the KMS scanout demo (needs root + a free VT)");
-    kms_step.dependOn(&run_kms.step);
+        const nested = b.addExecutable(.{
+            .name = "lattice-nested",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("example/nested.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        nested.root_module.addImport("lattice", root_module);
+        b.installArtifact(nested);
 
-    const constraints_e2e = b.addExecutable(.{
-        .name = "constraints-e2e",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("example/constraints_e2e.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    constraints_e2e.root_module.addImport("lattice", root_module);
-    constraints_e2e.root_module.addImport("prism", prism_dep.module("prism"));
-    constraints_e2e.root_module.addImport("wayland", wayland_mod);
-    constraints_e2e.root_module.addImport("wayland_protocol", wl_proto);
-    constraints_e2e.root_module.addImport("xdg_shell", xdg_proto);
-    constraints_e2e.root_module.addImport("relative_pointer", relative_pointer_proto);
-    constraints_e2e.root_module.addImport("pointer_constraints", pointer_constraints_proto);
-    b.installArtifact(constraints_e2e);
-    const run_e2e = b.addRunArtifact(constraints_e2e);
-    const e2e_step = b.step("example-constraints-e2e", "Run the pointer-constraints e2e test");
-    e2e_step.dependOn(&run_e2e.step);
+        const run_nested = b.addRunArtifact(nested);
+        // Ensure lattice-window is built and installed before we run nested.
+        run_nested.step.dependOn(&b.addInstallArtifact(example, .{}).step);
+        const nested_step = b.step("example-nested", "Run the nested compositor self-host example");
+        nested_step.dependOn(&run_nested.step);
+
+        const kms_demo = b.addExecutable(.{
+            .name = "lattice-kms-demo",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("example/kms_demo.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        kms_demo.root_module.addImport("lattice", root_module);
+        b.installArtifact(kms_demo);
+
+        const run_kms = b.addRunArtifact(kms_demo);
+        const kms_step = b.step("example-kms", "Run the KMS scanout demo (needs root + a free VT)");
+        kms_step.dependOn(&run_kms.step);
+
+        const constraints_e2e = b.addExecutable(.{
+            .name = "constraints-e2e",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("example/constraints_e2e.zig"),
+                .target = target,
+                .optimize = optimize,
+            }),
+        });
+        constraints_e2e.root_module.addImport("lattice", root_module);
+        constraints_e2e.root_module.addImport("prism", prism_dep.module("prism"));
+        constraints_e2e.root_module.addImport("wayland", wayland_mod);
+        constraints_e2e.root_module.addImport("wayland_protocol", wl_proto);
+        constraints_e2e.root_module.addImport("xdg_shell", xdg_proto);
+        constraints_e2e.root_module.addImport("relative_pointer", relative_pointer_proto);
+        constraints_e2e.root_module.addImport("pointer_constraints", pointer_constraints_proto);
+
+        b.installArtifact(constraints_e2e);
+        const run_e2e = b.addRunArtifact(constraints_e2e);
+        const e2e_step = b.step("example-constraints-e2e", "Run the pointer-constraints e2e test");
+        e2e_step.dependOn(&run_e2e.step);
+    }
 
     const tests = b.addTest(.{ .root_module = root_module });
     const run_tests = b.addRunArtifact(tests);

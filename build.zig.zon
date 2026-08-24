@@ -37,8 +37,8 @@
             .hash = "libseat-0.1.0-q6LEcyXEAQApF-Trpa1IwPejAhATnE2JlKBGVXsTtL6X",
         },
         .prism = .{
-            .url = "git+https://github.com/Midstall/prism#6b14a3e72bf05427e8ff75335f0206d079c508f0",
-            .hash = "prism-0.1.0-PSE12I20OAC4gr2XF_0RgEyXa0N0NvzYZyUsXI2VRkhR",
+            .url = "git+https://github.com/Midstall/prism#d50303f2302c161ff3e9fadbb24f990248fe1e0f",
+            .hash = "prism-0.1.0-PSE12N28OACyQoAXy3yrAXyMxthCSa6ur1TgjVpCL0c_",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "lib" },

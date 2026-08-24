@@ -28,6 +28,7 @@ const client = wl.client;
 const lattice_backend = @import("../../backend.zig");
 const event_mod = @import("../../event.zig");
 const id_mod = @import("../../id.zig");
+const keyboard_mod = @import("../../keyboard.zig");
 const outputs_mod = @import("outputs.zig");
 const window_mod = @import("window.zig");
 
@@ -77,6 +78,15 @@ pub const LogicalEvent = union(enum) {
     wl_pointer_axis: struct { axis: u32, value: f64 },
     /// Input: wl_keyboard.key - keyboard key pressed or released.
     wl_keyboard_key: struct { key: u32, state: u32 },
+    /// Input: wl_keyboard.keymap - the compositor's keymap, as an fd and a size.
+    /// format 1 is XKB v1 text; format 0 means the compositor supplies nothing.
+    wl_keyboard_keymap: struct { format: u32, fd: i32, size: u32 },
+    /// Input: wl_keyboard.enter - a surface gained the keyboard focus.
+    wl_keyboard_enter: struct { surface_obj: u32 },
+    /// Input: wl_keyboard.leave - a surface lost the keyboard focus.
+    wl_keyboard_leave: struct { surface_obj: u32 },
+    /// Input: wl_keyboard.modifiers - the serialized modifier and group state.
+    wl_keyboard_modifiers: struct { depressed: u32, latched: u32, locked: u32, group: u32 },
     wl_seat_capabilities: struct { caps: u32 },
     /// Input: wl_touch.down - a touch contact started.
     wl_touch_down: struct { id: i32, x: f64, y: f64 },
@@ -226,6 +236,21 @@ pub fn classify(
         return switch (op) {
             // key: args = [serial(u), time(u), key(u), state(u)]
             .key => .{ .wl_keyboard_key = .{ .key = args[2].uint, .state = args[3].uint } },
+            // keymap: args = [format(u), fd(h), size(u)]
+            .keymap => .{ .wl_keyboard_keymap = .{ .format = args[0].uint, .fd = args[1].fd, .size = args[2].uint } },
+            // enter: args = [serial(u), surface(o), keys(a)]
+            .enter => .{ .wl_keyboard_enter = .{ .surface_obj = args[1].object orelse 0 } },
+            // leave: args = [serial(u), surface(o)]
+            .leave => .{ .wl_keyboard_leave = .{ .surface_obj = args[1].object orelse 0 } },
+            // modifiers: args = [serial(u), depressed(u), latched(u), locked(u), group(u)]
+            .modifiers => .{ .wl_keyboard_modifiers = .{
+                .depressed = args[1].uint,
+                .latched = args[2].uint,
+                .locked = args[3].uint,
+                .group = args[4].uint,
+            } },
+            // repeat_info is client-side key repeat timing, which nothing consumes
+            // yet. The neutral event has no repeat action until then.
             else => .other,
         };
     }
@@ -371,6 +396,10 @@ pub fn translate(
         .wl_pointer_button,
         .wl_pointer_axis,
         .wl_keyboard_key,
+        .wl_keyboard_keymap,
+        .wl_keyboard_enter,
+        .wl_keyboard_leave,
+        .wl_keyboard_modifiers,
         .wl_touch_down,
         .wl_touch_up,
         .wl_touch_motion,
@@ -659,10 +688,70 @@ fn handleEvent(
             }
         },
 
+        .wl_keyboard_keymap => |km| {
+            // The fd is ours to close. format 1 carries XKB v1 text; format 0 is
+            // the compositor saying it has no keymap, in which case the embedded
+            // fallback keeps the keys working. A bad fd or a bad string keeps the
+            // current map: the wire is untrusted and a poisoned keymap must not
+            // kill the keys that already work.
+            defer _ = linux.close(km.fd);
+            if (km.format != 1) {
+                w.keyboard.setKeymapFromString(keyboard_mod.minimal_keymap) catch {};
+                return;
+            }
+            if (km.size == 0) return;
+            const mapped = posix.mmap(null, km.size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, km.fd, 0) catch return;
+            defer posix.munmap(mapped);
+            // The protocol size includes the trailing NUL, which the keymap lexer
+            // does not want. The parse runs BEFORE the munmap, because the slice
+            // aliases the mapping.
+            w.keyboard.setKeymapFromString(mapped[0 .. mapped.len - 1]) catch {
+                std.log.warn("lattice: compositor keymap did not parse, keeping the previous one", .{});
+            };
+        },
+
+        .wl_keyboard_modifiers => |m| {
+            // The group index is wire input, so it gets a checked conversion.
+            w.keyboard.updateMods(m.depressed, m.latched, m.locked, std.math.cast(i32, m.group) orelse 0);
+        },
+
+        .wl_keyboard_enter => |e2| {
+            for (w.surfaces.items) |*win| {
+                if (win.wl_surface_id == e2.surface_obj) w.key_focus = win.id;
+            }
+        },
+
+        .wl_keyboard_leave => |e2| {
+            for (w.surfaces.items) |*win| {
+                if (win.wl_surface_id == e2.surface_obj and w.key_focus == win.id) {
+                    w.key_focus = null;
+                }
+            }
+        },
+
+        .wl_keyboard_key => |k| {
+            // Keys go to the KEYBOARD focus, which is tracked independently of the
+            // pointer: a compositor is free to focus a window the pointer is not
+            // over. The first surface is the fallback for a compositor that never
+            // sent an enter, which nested backends do.
+            const surf = w.key_focus orelse blk: {
+                if (w.surfaces.items.len > 0) break :blk w.surfaces.items[0].id;
+                break :blk null;
+            };
+            if (surf) |s| {
+                var iev = input_mod.inputFromLogical(logical, s) orelse return;
+                std.debug.assert(iev == .key);
+                const t = try w.keyboard.translate(k.key, k.state == 1);
+                iev.key.keysym = t.keysym;
+                iev.key.mods = t.mods;
+                iev.key.text = t.text;
+                sink(sink_ctx, .{ .input = iev });
+            }
+        },
+
         .wl_pointer_motion,
         .wl_pointer_button,
         .wl_pointer_axis,
-        .wl_keyboard_key,
         .wl_touch_down,
         .wl_touch_up,
         .wl_touch_motion,
@@ -888,6 +977,51 @@ test "classify xdg_wm_base.ping" {
     const result = classify(&xdg.XdgWmBase.interface, @intFromEnum(xdg.XdgWmBase.EventOpcode.ping), &args);
     try std.testing.expect(result == .xdg_ping);
     try std.testing.expectEqual(@as(u32, 99), result.xdg_ping.serial);
+}
+
+test "classify wl_keyboard.keymap carries the format, the fd and the size" {
+    const args = [_]wl.Argument{ .{ .uint = 1 }, .{ .fd = 7 }, .{ .uint = 4096 } };
+    const result = classify(&wlp.WlKeyboard.interface, @intFromEnum(wlp.WlKeyboard.EventOpcode.keymap), &args);
+    try std.testing.expect(result == .wl_keyboard_keymap);
+    try std.testing.expectEqual(@as(u32, 1), result.wl_keyboard_keymap.format);
+    try std.testing.expectEqual(@as(i32, 7), result.wl_keyboard_keymap.fd);
+    try std.testing.expectEqual(@as(u32, 4096), result.wl_keyboard_keymap.size);
+}
+
+test "classify wl_keyboard.enter and leave carry the surface object" {
+    const enter_args = [_]wl.Argument{ .{ .uint = 1 }, .{ .object = 42 }, .{ .array = null } };
+    const enter = classify(&wlp.WlKeyboard.interface, @intFromEnum(wlp.WlKeyboard.EventOpcode.enter), &enter_args);
+    try std.testing.expect(enter == .wl_keyboard_enter);
+    try std.testing.expectEqual(@as(u32, 42), enter.wl_keyboard_enter.surface_obj);
+
+    const leave_args = [_]wl.Argument{ .{ .uint = 2 }, .{ .object = 42 } };
+    const leave = classify(&wlp.WlKeyboard.interface, @intFromEnum(wlp.WlKeyboard.EventOpcode.leave), &leave_args);
+    try std.testing.expect(leave == .wl_keyboard_leave);
+    try std.testing.expectEqual(@as(u32, 42), leave.wl_keyboard_leave.surface_obj);
+}
+
+test "classify wl_keyboard.modifiers carries the four masks" {
+    const args = [_]wl.Argument{
+        .{ .uint = 9 }, // serial
+        .{ .uint = 1 }, // depressed
+        .{ .uint = 2 }, // latched
+        .{ .uint = 4 }, // locked
+        .{ .uint = 0 }, // group
+    };
+    const result = classify(&wlp.WlKeyboard.interface, @intFromEnum(wlp.WlKeyboard.EventOpcode.modifiers), &args);
+    try std.testing.expect(result == .wl_keyboard_modifiers);
+    try std.testing.expectEqual(@as(u32, 1), result.wl_keyboard_modifiers.depressed);
+    try std.testing.expectEqual(@as(u32, 2), result.wl_keyboard_modifiers.latched);
+    try std.testing.expectEqual(@as(u32, 4), result.wl_keyboard_modifiers.locked);
+    try std.testing.expectEqual(@as(u32, 0), result.wl_keyboard_modifiers.group);
+}
+
+test "classify wl_keyboard.repeat_info is ignored for now" {
+    // Key repeat is client-side timing, and the neutral event has no repeat
+    // action until a consumer needs one.
+    const args = [_]wl.Argument{ .{ .int = 25 }, .{ .int = 600 } };
+    const result = classify(&wlp.WlKeyboard.interface, @intFromEnum(wlp.WlKeyboard.EventOpcode.repeat_info), &args);
+    try std.testing.expect(result == .other);
 }
 
 test "classify unknown opcode returns other" {

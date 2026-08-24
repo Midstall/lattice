@@ -8,6 +8,7 @@ const session = @import("session.zig");
 const udev = @import("udev");
 const backendMod = @import("../../backend.zig");
 const options_mod = @import("../../options.zig");
+const keyboard_mod = @import("../../keyboard.zig");
 
 /// Map a lattice AccelProfile to the libinput filter.Profile tag.
 /// Pure function, safe to call without hardware.
@@ -86,6 +87,13 @@ pub const Input = struct {
     /// Netlink monitor for runtime input hotplug (Linux-only, optional).
     monitor: if (builtin.os.tag == .linux) ?udev.Monitor else void =
         if (builtin.os.tag == .linux) null else {},
+    /// The keymap and modifier state that turns evdev keycodes into keysyms.
+    /// A bare evdev device has no compositor to ask, so the map comes from the
+    /// XKB database with the embedded US fallback. The environment is NOT read
+    /// today: lattice does not thread environ into its backends yet, and reading
+    /// the process environment inside a library is the global-state pattern the
+    /// embedders asked us to remove. Threading environ is the follow-up.
+    keyboard: keyboard_mod.KeyboardState = .{},
 
     /// Convenience constructor for the pure-core (no session, no udev).
     /// Does NOT allocate on the heap; caller owns the returned value directly.
@@ -125,6 +133,12 @@ pub const Input = struct {
         };
         self.ctx = libinput.Context.init(gpa);
         errdefer self.ctx.deinit();
+
+        // The keymap resolves from the XKB database with the embedded US map as
+        // the fallback; it never fails. See the field comment for the environ
+        // limitation.
+        self.keyboard = keyboard_mod.KeyboardState.initFromEnv(gpa, io, null);
+        errdefer self.keyboard.deinit();
 
         try enumerateAndOpen(self, gpa, io, sess);
 
@@ -177,6 +191,7 @@ pub const Input = struct {
             if (self.monitor) |*mon| mon.deinit();
             if (self.udev_ctx) |*uctx| uctx.deinit();
         }
+        self.keyboard.deinit();
         self.ctx.deinit();
         self.gpa.destroy(self);
     }
@@ -293,10 +308,20 @@ pub const Input = struct {
                 .horizontal = if (a.axis == .horizontal) a.value else 0,
                 .vertical = if (a.axis == .vertical) a.value else 0,
             } },
-            .key => |k| return .{ .key = .{
-                .keycode = k.code,
-                .state = if (k.state == .pressed) .pressed else .released,
-            } },
+            .key => |k| {
+                var out = nev.KeyEvent{
+                    .keycode = k.code,
+                    .state = if (k.state == .pressed) .pressed else .released,
+                };
+                // An enrichment failure (the only one is OOM recording a held
+                // modifier) must not drop the key: an unenriched key beats none.
+                if (self.keyboard.translate(k.code, k.state == .pressed)) |t| {
+                    out.keysym = t.keysym;
+                    out.mods = t.mods;
+                    out.text = t.text;
+                } else |_| {}
+                return .{ .key = out };
+            },
             .tablet_proximity => |t| return .{ .tablet_proximity = .{
                 .surface = self.surface,
                 .in_prox = t.in_prox,
@@ -487,6 +512,31 @@ test "translate button and key pass through raw" {
     try std.testing.expect(k == .key);
     try std.testing.expectEqual(@as(u32, 30), k.key.keycode);
     try std.testing.expectEqual(nev.KeyState.pressed, k.key.state);
+    // The pure-core init has no keymap, so the enrichment fields stay empty.
+    try std.testing.expectEqual(@as(u32, 0), k.key.keysym);
+    try std.testing.expect(k.key.text == null);
+}
+
+test "translate enriches a key with the keysym, the modifiers and the text" {
+    var in = Input.init(id.SurfaceId.from(1), 800, 600);
+    in.keyboard = try keyboard_mod.KeyboardState.initFromString(
+        std.testing.allocator,
+        std.testing.io,
+        keyboard_mod.minimal_keymap,
+    );
+    defer in.keyboard.deinit();
+
+    const k = in.translate(.{ .key = .{ .time_ms = 0, .code = 30, .state = .pressed } }).?;
+    try std.testing.expect(k == .key);
+    try std.testing.expectEqual(@as(u32, 30), k.key.keycode);
+    try std.testing.expectEqual(@as(u32, 'a'), k.key.keysym);
+    try std.testing.expectEqualStrings("a", k.key.text.?);
+    try std.testing.expect(k.key.mods.none());
+
+    // A release reports the keysym and no text.
+    const up = in.translate(.{ .key = .{ .time_ms = 1, .code = 30, .state = .released } }).?;
+    try std.testing.expectEqual(@as(u32, 'a'), up.key.keysym);
+    try std.testing.expect(up.key.text == null);
 }
 
 test "translate axis folds vertical/horizontal" {

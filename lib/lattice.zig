@@ -27,6 +27,9 @@ pub const Event = event.Event;
 pub const InputEvent = event.InputEvent;
 pub const SeatCapabilities = event.SeatCapabilities;
 
+pub const keyboard = @import("lattice/keyboard.zig");
+pub const KeyboardState = keyboard.KeyboardState;
+
 pub const output = @import("lattice/output.zig");
 pub const Output = output.Output;
 pub const HdrCaps = output.HdrCaps;

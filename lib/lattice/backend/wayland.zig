@@ -30,6 +30,7 @@ const id_mod = @import("../id.zig");
 const options_mod = @import("../options.zig");
 
 const globals_mod = @import("wayland/globals.zig");
+const keyboard_mod = @import("../keyboard.zig");
 const outputs_mod = @import("wayland/outputs.zig");
 const window_mod = @import("wayland/window.zig");
 const dispatch_mod = @import("wayland/dispatch.zig");
@@ -95,8 +96,16 @@ pub const Wayland = struct {
     /// Which kind of constraint is active (.none, .lock, .confine). Used to call the
     /// correct destroy request when tearing down the active constraint.
     active_constraint_kind: enum { none, lock, confine } = .none,
-    /// The surface currently holding keyboard focus (nil until Task 8 wires events).
+    /// The surface the pointer is over, tracked from wl_pointer.enter.
     focus_surface: ?id_mod.SurfaceId = null,
+    /// The surface holding KEYBOARD focus, tracked from wl_keyboard.enter. Key
+    /// events go here, not to the pointer surface: the two foci are independent
+    /// on every compositor.
+    key_focus: ?id_mod.SurfaceId = null,
+    /// The keymap and modifier state for the seat's keyboard. Starts empty; the
+    /// compositor sends the keymap on wl_keyboard.keymap right after the
+    /// keyboard object is bound, and dispatch.zig feeds it in.
+    keyboard: keyboard_mod.KeyboardState = .{},
     /// Format/modifier pairs advertised by the compositor during init roundtrip.
     dmabuf_formats: std.ArrayList(DmabufFormat),
     /// Accumulated neutral outputs from the initial roundtrip.
@@ -469,6 +478,7 @@ pub const Wayland = struct {
         self.outputs.deinit(self.gpa);
         self.output_name_bufs.deinit(self.gpa);
         self.output_accums.deinit(self.gpa);
+        self.keyboard.deinit();
         _ = linux.close(self.wakeup_fd);
         self.ctx.deinit();
         self.device.deinit();

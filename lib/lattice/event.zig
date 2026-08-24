@@ -4,7 +4,37 @@ const id = @import("id.zig");
 pub const KeyState = enum { pressed, released };
 pub const ButtonState = enum { pressed, released };
 
-pub const KeyEvent = struct { keycode: u32, state: KeyState };
+/// The modifier keys held while a key event happened. A consumer should never
+/// have to read a protocol bitmask, so each backend folds its own modifier
+/// model into these four flags.
+pub const KeyMods = packed struct {
+    shift: bool = false,
+    ctrl: bool = false,
+    alt: bool = false,
+    super: bool = false,
+
+    pub fn none(self: KeyMods) bool {
+        return !self.shift and !self.ctrl and !self.alt and !self.super;
+    }
+};
+
+pub const KeyEvent = struct {
+    /// The raw evdev keycode. Kept for consumers that forward keys verbatim, as
+    /// a compositor does when it passes input through to hosted clients, and
+    /// for logs. A toolkit should read `keysym` instead.
+    keycode: u32,
+    state: KeyState,
+    /// The X11 keysym the keycode maps to under the active keymap. 0 when no
+    /// keymap resolved the key, for example before the compositor's keymap
+    /// arrives. The values are the ones Midstall's xkbcommon.zig produces.
+    keysym: u32 = 0,
+    /// The modifiers held while the key went down.
+    mods: KeyMods = .{},
+    /// The UTF-8 text the key produces, or null for named keys and for any key
+    /// with ctrl or alt held, because a text field inserts this blindly. The
+    /// slice borrows backend storage and is valid until the next key event.
+    text: ?[]const u8 = null,
+};
 pub const PointerMotion = struct { surface: id.SurfaceId, x: f64, y: f64 };
 pub const PointerButton = struct { surface: id.SurfaceId, button: u32, state: ButtonState };
 pub const PointerAxis = struct { surface: id.SurfaceId, horizontal: f64, vertical: f64 };
@@ -136,4 +166,10 @@ test "event construction and tag inspection" {
     const k = Event{ .input = .{ .key = .{ .keycode = 30, .state = .pressed } } };
     try std.testing.expect(k.input == .key);
     try std.testing.expectEqual(KeyState.pressed, k.input.key.state);
+    // A key with no resolved keymap still carries the raw code, and the
+    // enriched fields default to empty rather than being absent.
+    try std.testing.expectEqual(@as(u32, 30), k.input.key.keycode);
+    try std.testing.expectEqual(@as(u32, 0), k.input.key.keysym);
+    try std.testing.expect(k.input.key.mods.none());
+    try std.testing.expect(k.input.key.text == null);
 }

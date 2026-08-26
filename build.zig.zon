@@ -21,8 +21,8 @@
             .hash = "drm-0.1.0-ObSCTywHAQAeCZ7R4ZAVRLD63FEkmWIQfOhnfwQwoiBF",
         },
         .xkbcommon = .{
-            .url = "git+https://github.com/Midstall/xkbcommon.zig#5727d27a6bc0d922aa88f025420f1b4a9dd62ece",
-            .hash = "xkbcommon-0.1.0-6Tc_PehiCACqApjXu5KW2of9FEot2c5I3ADdH4kXvUzc",
+            .url = "git+https://github.com/Midstall/xkbcommon.zig#71bbf718f12105cbdb1f7c6022a3d617c3da0348",
+            .hash = "xkbcommon-0.1.0-6Tc_PTNqCAAnrTQCiuoZ_ZiCVjBy91LqL1UIQokj4m7s",
         },
         .udev = .{
             .url = "git+https://github.com/Midstall/udev.zig#3652cb0ec9d8748f047f02669ba5bd90f907401b",

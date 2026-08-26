@@ -318,9 +318,6 @@ fn selectKeymap(ctx: *SeatCtx, result: anyerror![]u8) void {
 pub fn initSeatKeymap(ctx: *SeatCtx, gpa: std.mem.Allocator, io: std.Io, root: ?[]const u8) void {
     const result = buildRealKeymap(gpa, io, root);
     selectKeymap(ctx, result);
-    if (ctx.keymap_is_real) {} else if (result) |_| {
-        // unreachable: selectKeymap sets is_real on success. Kept for clarity.
-    } else {}
 }
 
 /// Write the seat's cached XKB keymap to a memfd and send it to a wl_keyboard

@@ -487,6 +487,9 @@ const compositor_shaped_keymap: [:0]const u8 =
     \\    virtual_modifiers NumLock,Alt,LevelThree,Super,Meta,Hyper=0x4000;
     \\    interpret.useModMapMods= AnyLevel;
     \\    interpret.repeat= False;
+    \\    interpret 0xff7f+AnyOf(all) {
+    \\      repeat= True;
+    \\    };
     \\    interpret XF86LogGrabInfo+AnyOfOrNone(all) {
     \\      repeat= True;
     \\      action= Private(type=0x86,data[0]=0x50,data[1]=0x72,data[2]=0x47);

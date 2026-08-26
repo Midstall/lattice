@@ -221,7 +221,6 @@ fn onGetRelativePointer(client_data: ?*anyopaque, resource: *Object, id_: u32, p
             return;
         }
     }
-    std.log.warn("constraints: get_relative_pointer: no matching ClientSeat for client", .{});
 }
 
 /// ResourceDestroyFn for relative_pointer resources. Clears the stored
@@ -269,7 +268,6 @@ fn onConstraintsGlobalDestroy(client_data: ?*anyopaque, resource: *Object) void 
 /// origin. Task 6 will resolve the real region when the API is available.
 fn regionFromWlRegion(region_res: ?*Object) ?backend.Region {
     if (region_res) |_| {
-        std.log.warn("constraints: wl_region content not yet resolved; treating as full-surface-bounds", .{});
         return null;
     }
     return null;
@@ -289,7 +287,6 @@ fn createConstraint(
     const ctx: *ConstraintsCtx = getCtx(client_data);
     const comp = getCompositor(ctx);
     const surf_entry = comp.findSurface(resource.client, surface_.id) orelse {
-        std.log.warn("constraints: lock/confine on an unmapped/unknown wl_surface (id={d}); ignoring", .{surface_.id});
         return;
     };
     const surf_id = surf_entry.surface.id.value(); // compositor-global HostedSurfaceId
@@ -329,17 +326,10 @@ fn createConstraint(
         .active = false,
         .dead = false,
         .obj_res = obj_res,
-    }) catch |err| {
-        std.log.err("constraints: failed to append constraint: {}", .{err});
+    }) catch {
         obj_res.destroy();
         return;
     };
-
-    std.log.info("constraints: {s} constraint created for surface {d} lifetime={s}", .{
-        @tagName(kind),
-        surf_id,
-        @tagName(lifetime),
-    });
 }
 
 fn onLockPointer(

@@ -103,7 +103,6 @@ pub const Kms = struct {
         // distinction survives (a plain prism.Format round-trip would turn xrgb8888
         // into AR24, which KMS planes reject; xrgb8888 must scan out as XR24).
         const scan_pf: color.PixelFormat = if (desc.color.format == .rgba16_float) blk: {
-            std.debug.print("kms: fp16 not scanout-capable on virtio-gpu, using 10-bit argb2101010 for scanout\n", .{});
             break :blk .argb2101010;
         } else desc.color.format;
 
@@ -133,8 +132,7 @@ pub const Kms = struct {
                 self.disp.mode.hdisplay,
                 self.disp.mode.vdisplay,
                 self.input_config,
-            ) catch |e| blk: {
-                std.log.warn("kms: input unavailable: {s}", .{@errorName(e)});
+            ) catch blk: {
                 break :blk null;
             };
         } else {

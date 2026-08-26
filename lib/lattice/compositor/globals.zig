@@ -114,9 +114,7 @@ fn onCreateSurface(client_data: ?*anyopaque, resource: *Object, id: u32) void {
 
     // Register a HostedEntry for this surface.
     const comp = getCompositor(ctx);
-    comp.createSurfaceEntry(surface, id) catch |err| {
-        std.log.err("compositor: failed to create surface entry for id={d}: {}", .{ id, err });
-    };
+    comp.createSurfaceEntry(surface, id) catch {};
 }
 
 fn onCreateRegion(client_data: ?*anyopaque, resource: *Object, id: u32) void {
@@ -199,17 +197,6 @@ fn onSurfaceCommit(client_data: ?*anyopaque, resource: *Object) void {
     // The wl_surface object id (resource.id) is the key used by the color manager.
     if (comp.surfaceColorState(resource.client, resource.id)) |state| {
         const new_color = @import("color_manager.zig").colorStateToConfig(state);
-        // Log once when this hosted surface first transitions to an HDR color state.
-        if (!entry.hdr_logged and new_color.isHdr()) {
-            const lum_max: u32 = if (new_color.luminance) |l| @intFromFloat(l.max_nits) else 0;
-            std.log.info("compositor: hosted surface {d} color HDR transfer={s} primaries={s} max_nits={d}", .{
-                entry.surface.id.value(),
-                @tagName(new_color.transfer),
-                @tagName(new_color.colorspace),
-                lum_max,
-            });
-            entry.hdr_logged = true;
-        }
         entry.surface.color = new_color;
     }
 
@@ -228,13 +215,10 @@ fn onSurfaceCommit(client_data: ?*anyopaque, resource: *Object) void {
                     .{ .TYPE = .SHARED },
                     dbuf.fd,
                     0,
-                ) catch |err| blk: {
-                    std.log.err("compositor: dmabuf mmap failed for id={d}: {}", .{ buf_res.id, err });
+                ) catch blk: {
                     break :blk null;
                 };
-                if (dbuf.mapping != null) {
-                    std.log.debug("compositor: imported dmabuf buffer {d}x{d}", .{ dbuf.width, dbuf.height });
-                }
+                if (dbuf.mapping != null) {}
             }
             if (dbuf.mapping) |pixels| {
                 const w = dbuf.width;
@@ -248,40 +232,9 @@ fn onSurfaceCommit(client_data: ?*anyopaque, resource: *Object) void {
                 entry.last_stride = stride;
                 entry.last_format = fmt;
 
-                hosted_mod.uploadToTexture(comp.device, entry, pixels, w, h, stride, fmt) catch |err| {
-                    std.log.err("compositor: dmabuf texture upload failed: {}", .{err});
-                };
+                hosted_mod.uploadToTexture(comp.device, entry, pixels, w, h, stride, fmt) catch {};
 
                 // HDR slice 2 Part 2b proof: when the committed dma-buf carries an
-                // HDR pixel format (fp16 or 10-bit), log ONCE per surface that we
-                // imported it into a real HDR texture and read back texel (0,0).
-                // fp16: R>1.0 proves HDR preserved. 10-bit: R>255 is impossible via 8-bit path.
-                const fmt_map = @import("../format_map.zig");
-                if (!entry.hdr_fmt_logged) {
-                    if (fmt_map.fourccToPrism(fmt)) |pfmt| {
-                        if (pfmt.isHdr()) {
-                            if (pfmt == .rgba16_float) {
-                                std.log.info("compositor: imported HDR dmabuf buffer {d}x{d} format=rgba16_float", .{ w, h });
-                                // Texel (0,0): fp16 RGBA LE, R channel = bytes 0..1 LE.
-                                if (pixels.len >= 2) {
-                                    const r_bits: u16 = @as(u16, pixels[0]) | (@as(u16, pixels[1]) << 8);
-                                    const r: f16 = @bitCast(r_bits);
-                                    std.log.info("compositor: HDR dmabuf texel[0,0] R={d:.2} (>1.0 HDR preserved)", .{@as(f32, r)});
-                                }
-                            } else if (pfmt == .rgb10a2 or pfmt == .rgb10x2) {
-                                std.log.info("compositor: imported HDR dmabuf buffer {d}x{d} format={s}", .{ w, h, @tagName(pfmt) });
-                                // Texel (0,0): rgb10a2 LE u32, R channel = bits [9:0].
-                                if (pixels.len >= 4) {
-                                    const dword = std.mem.readInt(u32, pixels[0..4], .little);
-                                    const r10 = dword & 0x3FF;
-                                    std.log.info("compositor: HDR dmabuf texel[0,0] R={d} (>255 = 10-bit, 8-bit impossible)", .{r10});
-                                }
-                            }
-                            entry.hdr_fmt_logged = true;
-                        }
-                    }
-                }
-
                 // Record the committed dmabuf resource for release in endFrame.
                 entry.committed_dmabuf_res = buf_res;
 
@@ -307,42 +260,9 @@ fn onSurfaceCommit(client_data: ?*anyopaque, resource: *Object) void {
             entry.last_format = fmt;
 
             // Task 7: upload pixels -> prism sampled texture.
-            hosted_mod.uploadToTexture(comp.device, entry, pixels, w, h, stride, fmt) catch |err| {
-                std.log.err("compositor: texture upload failed: {}", .{err});
-            };
+            hosted_mod.uploadToTexture(comp.device, entry, pixels, w, h, stride, fmt) catch {};
 
             // HDR slice 2 (Task 4) proof: when the committed shm buffer carries an
-            // HDR pixel format (rgba16_float via fourcc ABGR16161616F), log ONCE per
-            // surface that we imported it into a real rgba16_float texture, and read
-            // back the fp16 R channel of the source texel (0,0). An SDR rgba8 path
-            // could never carry a >1.0 value; proving R>1.0 here proves the fp16 HDR
-            // pixel format survived end-to-end.
-            const fmt_map = @import("../format_map.zig");
-            if (!entry.hdr_fmt_logged) {
-                if (fmt_map.fourccToPrism(fmt)) |pfmt| {
-                    if (pfmt.isHdr()) {
-                        if (pfmt == .rgba16_float) {
-                            std.log.info("compositor: imported HDR shm buffer {d}x{d} format=rgba16_float", .{ w, h });
-                            // Texel (0,0): fp16 RGBA LE, R channel = bytes 0..1 LE.
-                            if (pixels.len >= 2) {
-                                const r_bits: u16 = @as(u16, pixels[0]) | (@as(u16, pixels[1]) << 8);
-                                const r: f16 = @bitCast(r_bits);
-                                std.log.info("compositor: HDR texel[0,0] R={d:.2} (>1.0 HDR preserved)", .{@as(f32, r)});
-                            }
-                        } else if (pfmt == .rgb10a2 or pfmt == .rgb10x2) {
-                            std.log.info("compositor: imported HDR 10-bit shm buffer {d}x{d} format={s}", .{ w, h, @tagName(pfmt) });
-                            // Texel (0,0): rgb10a2 LE u32, R channel = bits [9:0].
-                            if (pixels.len >= 4) {
-                                const dword = std.mem.readInt(u32, pixels[0..4], .little);
-                                const r10 = dword & 0x3FF;
-                                std.log.info("compositor: HDR 10-bit texel[0,0] R={d} (>255 = 10-bit, 8-bit impossible)", .{r10});
-                            }
-                        }
-                        entry.hdr_fmt_logged = true;
-                    }
-                }
-            }
-
             // FIX C3: record the buffer that was committed so endFrame releases exactly it.
             entry.committed_buffer_res = buf_res;
 

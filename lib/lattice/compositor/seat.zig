@@ -318,13 +318,9 @@ fn selectKeymap(ctx: *SeatCtx, result: anyerror![]u8) void {
 pub fn initSeatKeymap(ctx: *SeatCtx, gpa: std.mem.Allocator, io: std.Io, root: ?[]const u8) void {
     const result = buildRealKeymap(gpa, io, root);
     selectKeymap(ctx, result);
-    if (ctx.keymap_is_real) {
-        std.log.info("seat: real xkb keymap us/evdev ({d} bytes)", .{ctx.keymap_text.len});
-    } else if (result) |_| {
+    if (ctx.keymap_is_real) {} else if (result) |_| {
         // unreachable: selectKeymap sets is_real on success. Kept for clarity.
-    } else |err| {
-        std.log.warn("seat: xkb keymap build failed ({}), using MINIMAL fallback", .{err});
-    }
+    } else {}
 }
 
 /// Write the seat's cached XKB keymap to a memfd and send it to a wl_keyboard
@@ -337,7 +333,6 @@ fn sendKeymapToResource(ctx: *SeatCtx, kbd_res: *Object) void {
     const size: u32 = @intCast(text.len + 1);
 
     const fd = posix.memfd_create("xkb-keymap", 0) catch {
-        std.log.warn("seat: memfd_create failed, NO_KEYMAP fallback", .{});
         return;
     };
     // linux.close is the correct way to close an fd in Zig 0.16 (std.posix.close removed).
@@ -345,12 +340,10 @@ fn sendKeymapToResource(ctx: *SeatCtx, kbd_res: *Object) void {
 
     const rc = linux.ftruncate(fd, @intCast(size));
     if (posix.errno(rc) != .SUCCESS) {
-        std.log.warn("seat: ftruncate failed, NO_KEYMAP fallback", .{});
         return;
     }
 
     const map = std.posix.mmap(null, size, .{ .READ = true, .WRITE = true }, .{ .TYPE = .SHARED }, fd, 0) catch {
-        std.log.warn("seat: mmap failed, NO_KEYMAP fallback", .{});
         return;
     };
     @memcpy(map[0..text.len], text);
@@ -372,9 +365,7 @@ pub fn bindSeat(client: *Client, data: ?*anyopaque, version: u32, id: u32) void 
     wlp.WlSeat.setImplementation(resource, &ctx.seat_impl, ctx, onSeatDestroy);
 
     const comp = getCompositor(ctx);
-    comp.seat_ctx.clients.append(comp.gpa, .{ .seat_res = resource }) catch |err| {
-        std.log.err("seat: failed to track client seat: {}", .{err});
-    };
+    comp.seat_ctx.clients.append(comp.gpa, .{ .seat_res = resource }) catch {};
 }
 
 fn onSeatDestroy(resource: *Object) void {
@@ -591,7 +582,6 @@ pub fn routeFocus(
                     comp.cursor_x = target.x;
                     comp.cursor_y = target.y;
                     c.has_hint = false;
-                    std.log.info("constraints: warp-on-unlock applied ({d:.2},{d:.2})", .{ target.x, target.y });
                 }
                 // Send protocol event to client.
                 if (c.obj_res) |obj| {

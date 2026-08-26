@@ -539,11 +539,10 @@ fn handleEvent(
             // Async create succeeded: the compositor sends us the new wl_buffer id.
             // Register it in imap, wire it to the pending surface slot, and request
             // a redraw so the next commitFrameDmabuf can attach it.
-            std.debug.print("[lattice] zwp_linux_buffer_params_v1.created: buffer_id={d} params_id={d}\n", .{ info.buffer_id, ev.object_id });
             // Register the new wl_buffer.
-            w.imap.set(info.buffer_id, &wlp.WlBuffer.interface) catch |err| {
-                std.debug.print("[lattice] created: imap.set buffer failed: {s}\n", .{@errorName(err)});
-            };
+            // A buffer the map cannot record is a buffer the next frame will not
+            // attach, which the dmabuf path already recovers from by falling back.
+            w.imap.set(info.buffer_id, &wlp.WlBuffer.interface) catch {};
             // Remove the params object (consumed by create).
             w.imap.remove(ev.object_id);
             // Find the window with matching pending_create params_id.
@@ -552,7 +551,6 @@ fn handleEvent(
                     if (pc.params_id == ev.object_id) {
                         win.dmabuf_wl[pc.slot] = .{ .buffer_id = info.buffer_id, .busy = false };
                         win.pending_create = null;
-                        std.debug.print("[lattice] dmabuf: buffer ready slot={d}, requesting redraw\n", .{pc.slot});
                         // Emit redraw so the next frame commits with the new buffer.
                         sink(sink_ctx, event_mod.Event{ .redraw_requested = win.id });
                         break;
@@ -567,7 +565,6 @@ fn handleEvent(
             // Clear pending state, remove params from imap, and fall back to shm.
             // The connection stays alive. Mark the surface as dmabuf_failed so it never
             // re-attempts dmabuf (mode selection always forces shm after this).
-            std.debug.print("[lattice] zwp_linux_buffer_params_v1.failed for params id={d}; falling back to shm\n", .{ev.object_id});
             // Remove the failed params object from imap.
             w.imap.remove(ev.object_id);
             // Find the surface whose pending_create matches this params_id and fall back.
@@ -575,7 +572,6 @@ fn handleEvent(
                 if (win.pending_create) |pc| {
                     if (pc.params_id == ev.object_id) {
                         win.pending_create = null;
-                        std.debug.print("[lattice] dmabuf: failed slot={d}, switching to shm (permanently)\n", .{pc.slot});
                         win.present_mode = .shm;
                         win.dmabuf_failed = true;
                         // Tear down dmabuf state so surfaceRenderTarget reinitializes as shm.
@@ -684,7 +680,6 @@ fn handleEvent(
                 try w.conn.sendMessage(wire.finish());
                 try w.imap.set(tid, &wlp.WlTouch.interface);
                 w.touch_id = tid;
-                std.log.info("lattice: seat advertised touch; touch_id={d}", .{tid});
             }
         },
 
@@ -705,9 +700,7 @@ fn handleEvent(
             // The protocol size includes the trailing NUL, which the keymap lexer
             // does not want. The parse runs BEFORE the munmap, because the slice
             // aliases the mapping.
-            w.keyboard.setKeymapFromString(mapped[0 .. mapped.len - 1]) catch {
-                std.log.warn("lattice: compositor keymap did not parse, keeping the previous one", .{});
-            };
+            w.keyboard.setKeymapFromString(mapped[0 .. mapped.len - 1]) catch {};
         },
 
         .wl_keyboard_modifiers => |m| {

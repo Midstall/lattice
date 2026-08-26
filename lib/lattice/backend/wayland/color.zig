@@ -134,12 +134,6 @@ pub fn declareSurfaceColor(
     try conn.sendMessage(w.finish());
     imap.remove(image_desc_id);
 
-    std.log.debug("lattice: declared HDR color on wl_surface {d} (tf={d} primaries={d})", .{
-        wl_surface_id,
-        tf_named,
-        primaries_named,
-    });
-
     // cm_surface stays alive for the surface's lifetime; return its id so the
     // caller can destroy it (and drop the imap entry) on surface teardown.
     return cm_surface_id;

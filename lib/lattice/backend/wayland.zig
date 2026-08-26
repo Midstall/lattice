@@ -147,12 +147,6 @@ pub const Wayland = struct {
         const raw_globals = try globals_mod.roundtripGlobals(&conn, &imap, registry_id, gpa);
         defer globals_mod.freeGlobals(gpa, raw_globals);
 
-        // Debug: print what globals were advertised by the compositor.
-        std.debug.print("[lattice] globals from compositor ({d}):\n", .{raw_globals.len});
-        for (raw_globals) |g| {
-            std.debug.print("  global name={d} interface={s} version={d}\n", .{ g.name, g.interface, g.version });
-        }
-
         // 4. Bind standard globals.
         const bound = try globals_mod.bindStandards(&conn, &imap, registry_id, raw_globals, gpa);
         defer gpa.free(bound.output_ids);
@@ -218,7 +212,6 @@ pub const Wayland = struct {
                     if (hdr_obj == feedback_id and hdr_op == ft_opcode) {
                         // Read the format table fd (queued by collectFds during recvBytes).
                         const ft_fd = conn.takeFd() orelse {
-                            std.debug.print("[lattice] format_table: expected fd in queue but got none\n", .{});
                             break :blk null;
                         };
                         defer _ = linux.close(ft_fd);
@@ -226,15 +219,13 @@ pub const Wayland = struct {
                         if (hdr_w1 >> 16 >= 12) {
                             const ft_size = std.mem.readInt(u32, msg_buf2[8..12], .little);
                             if (ft_size > 0 and ft_table_map_ref: {
-                                const mapped = posix.mmap(null, ft_size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, ft_fd, 0) catch |e| {
-                                    std.debug.print("[lattice] format_table mmap failed: {s}\n", .{@errorName(e)});
+                                const mapped = posix.mmap(null, ft_size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, ft_fd, 0) catch {
                                     break :ft_table_map_ref false;
                                 };
                                 // Release previous map if any (shouldn't happen, but be safe).
                                 if (fmt_table_map) |old| posix.munmap(old);
                                 fmt_table_map = mapped;
                                 fmt_table_len = ft_size / 16; // each entry is 16 bytes
-                                std.debug.print("[lattice] format_table: {d} entries\n", .{fmt_table_len});
                                 break :ft_table_map_ref true;
                             } == false) {}
                         }
@@ -321,7 +312,6 @@ pub const Wayland = struct {
                     conn.sendMessage(w2.finish()) catch {};
                     imap.remove(feedback_id);
                     feedback_id = 0;
-                    std.debug.print("[lattice] dmabuf feedback done: {d} format+modifier pairs collected\n", .{dmabuf_formats_init.items.len});
                 }
                 continue;
             }
@@ -367,9 +357,6 @@ pub const Wayland = struct {
 
         const ctx = try selected.device.createContext();
         errdefer ctx.deinit();
-
-        // Print the selected driver so the operator can see which path is in use.
-        std.debug.print("prism driver: {s} ({s})\n", .{ selected.driver.name, selected.device.caps().device_name });
 
         // 7. Create wakeup eventfd (EFD_CLOEXEC | EFD_NONBLOCK).
         const wakeup_rc = linux.eventfd(0, linux.EFD.CLOEXEC | linux.EFD.NONBLOCK);
@@ -432,14 +419,6 @@ pub const Wayland = struct {
             // that never had the touch capability is a protocol violation that would
             // disconnect us, and most seats have no touchscreen. See dispatch.zig's
             // wl_seat_capabilities handling.
-            std.log.info("lattice: wl_seat bound id={d} pointer_id={d} keyboard_id={d} caps: pointer={} keyboard={} touch={}", .{
-                self.seat_id,
-                self.pointer_id,
-                self.keyboard_id,
-                self.seat_caps.pointer,
-                self.seat_caps.keyboard,
-                self.seat_caps.touch,
-            });
         }
 
         // 11. Store pointer_constraints_id and create an always-on zwp_relative_pointer_v1
@@ -452,7 +431,6 @@ pub const Wayland = struct {
             try self.conn.sendMessage(w.finish());
             try self.imap.set(rp_id, &rp.ZwpRelativePointerV1.interface);
             self.relative_pointer_id = rp_id;
-            std.log.info("lattice: relative_pointer_id={d} pointer_constraints_id={d}", .{ self.relative_pointer_id, self.pointer_constraints_id });
         }
 
         // 12. Bind tablet seat if the parent advertised zwp_tablet_manager_v2 and we have a seat.
@@ -464,7 +442,6 @@ pub const Wayland = struct {
             try self.conn.sendMessage(w.finish());
             try self.imap.set(ts_id, &tv2.ZwpTabletSeatV2.interface);
             self.tablet_seat_id = ts_id;
-            std.log.info("lattice: tablet_seat_id={d}", .{self.tablet_seat_id});
         }
 
         return self;
@@ -641,8 +618,6 @@ pub const Wayland = struct {
             try conn.sendMessage(w.finish());
         }
 
-        std.debug.print("[lattice] dmabuf: async create sent params_id={d} w={d} h={d} format=0x{x:08}\n", .{ params_id, desc.width, desc.height, desc.format });
-
         return params_id;
     }
 
@@ -730,8 +705,7 @@ pub const Wayland = struct {
                 self.wp_color_manager_id,
                 wl_surface_id,
                 desc.color,
-            ) catch |e| blk: {
-                std.log.warn("lattice: declareSurfaceColor failed: {s}", .{@errorName(e)});
+            ) catch blk: {
                 break :blk 0;
             };
         }
@@ -806,7 +780,6 @@ pub const Wayland = struct {
             if (win.dmabuf_failed) {
                 // Surface previously had a dmabuf create failure; stick with shm.
                 win.present_mode = .shm;
-                std.debug.print("[lattice] present mode: shm (dmabuf previously failed)\n", .{});
             } else if (win.desc.color.format.isHdr()) {
                 // HDR slice 2 Part 2b: fp16 OR 10-bit over a dma-buf via straight-
                 // linear export. dmabuf only when the compositor advertises this
@@ -818,22 +791,13 @@ pub const Wayland = struct {
                 const hdr_fmt_ok = self.supportsFormat(hdr_fourcc, 0);
                 const can_export = self.device.vtable.exportResource != null;
                 win.present_mode = window_mod.chooseHdrMode(has_dmabuf, hdr_fmt_ok, can_export);
-                if (win.present_mode == .dmabuf) {
-                    std.debug.print("[lattice] present mode: dmabuf (HDR {s})\n", .{@tagName(win.desc.color.format)});
-                } else {
-                    std.debug.print("[lattice] present mode: shm (HDR {s}; dmabuf={} fmt_ok={} export={})\n", .{ @tagName(win.desc.color.format), has_dmabuf, hdr_fmt_ok, can_export });
-                }
+                if (win.present_mode == .dmabuf) {} else {}
             } else {
                 const has_dmabuf = self.zwp_linux_dmabuf_id != 0;
                 const fmt_ok = self.supportsFormat(0x34325241, 0);
                 const can_export = self.device.vtable.exportResource != null;
-                std.debug.print("[lattice] mode-select: has_dmabuf={} fmt_ok={} can_export={} pairs={d}\n", .{ has_dmabuf, fmt_ok, can_export, self.dmabuf_formats.items.len });
                 win.present_mode = window_mod.chooseDmabufMode(has_dmabuf, fmt_ok, can_export);
-                if (win.present_mode == .dmabuf) {
-                    std.debug.print("[lattice] present mode: dmabuf\n", .{});
-                } else {
-                    std.debug.print("[lattice] present mode: shm (fallback)\n", .{});
-                }
+                if (win.present_mode == .dmabuf) {} else {}
             }
         }
 
@@ -1029,8 +993,7 @@ pub const Wayland = struct {
                 // call allocates shm resources, and the following commitFrame presents
                 // normally. This self-heal-next-frame approach avoids sending a new
                 // attach/commit with a destroyed or missing buffer (Fix I3).
-                self.commitFrameDmabuf(win) catch |err| {
-                    std.debug.print("[lattice] dmabuf commit failed ({s}), falling back to shm (next frame)\n", .{@errorName(err)});
+                self.commitFrameDmabuf(win) catch {
                     self.destroyDmabufState(win);
                     win.present_mode = .shm;
                     // Mark dmabuf permanently failed for this surface: destroyDmabufState
@@ -1076,7 +1039,6 @@ pub const Wayland = struct {
             // and wait for the created/failed event to arrive.
             if (win.pending_create) |pend_create| {
                 if (pend_create.slot == cur) {
-                    std.debug.print("[lattice] dmabuf: create in-flight for slot={d}, skipping frame\n", .{cur});
                     return;
                 }
             }
@@ -1099,7 +1061,6 @@ pub const Wayland = struct {
 
             // Export the resource and send the async create request.
             const desc = try self.device.exportResource(target);
-            std.debug.print("[lattice] exportResource: fd={d} w={d} h={d} format=0x{x:08} stride={d} offset={d} modifier=0x{x}\n", .{ desc.fd, desc.width, desc.height, desc.format, desc.stride, desc.offset, desc.modifier });
 
             const params_id = try self.startDmabufCreate(desc);
             win.pending_create = .{ .params_id = params_id, .slot = cur };

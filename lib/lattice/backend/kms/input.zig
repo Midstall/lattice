@@ -246,8 +246,7 @@ pub const Input = struct {
         var mon = if (self.monitor != null) &self.monitor.? else return;
         const sess = self.sess orelse return;
         while (true) {
-            var dev = mon.receiveDevice() catch |err| {
-                std.log.warn("input: hotplug monitor recv error: {s}", .{@errorName(err)});
+            var dev = mon.receiveDevice() catch {
                 return;
             } orelse return; // null = socket drained
             defer dev.deinit();
@@ -263,18 +262,14 @@ pub const Input = struct {
 
             const node = dev.devnode() orelse continue;
 
-            const fd = sess.openDevice(node) catch |err| {
-                std.log.warn("input: hotplug: openDevice {s} failed: {s}", .{ node, @errorName(err) });
+            const fd = sess.openDevice(node) catch {
                 continue;
             };
 
-            const h = self.ctx.addDeviceFd(fd) catch |err| {
-                std.log.warn("input: hotplug: addDeviceFd {s} failed: {s}", .{ node, @errorName(err) });
+            const h = self.ctx.addDeviceFd(fd) catch {
                 continue;
             };
             self.applyConfig(h);
-
-            std.log.info("input: hotplugged device {s}", .{node});
         }
     }
 
@@ -350,7 +345,7 @@ pub const Input = struct {
 };
 
 /// Open a udev netlink monitor for the "input" subsystem. Non-fatal: on any
-/// error, logs std.log.warn and returns without setting self.monitor (static
+/// error, returns without setting self.monitor (static
 /// devices from enumerateAndOpen still work). Uses .kernel source so this
 /// functions in our microVM test environment where udevd is not running;
 /// devtmpfs creates /dev nodes synchronously so ACTION=add events carry a
@@ -361,14 +356,12 @@ fn openMonitor(self: *Input, gpa: std.mem.Allocator, io: std.Io) void {
     // address to the Monitor. Monitor keeps a *Context, so it must not point at a
     // stack local that dies when this function returns.
     self.udev_ctx = udev.Context.init(gpa, io);
-    var mon = udev.Monitor.initNetlink(&self.udev_ctx.?, .kernel) catch |err| {
-        std.log.warn("input: hotplug monitor unavailable ({}), continuing without", .{err});
+    var mon = udev.Monitor.initNetlink(&self.udev_ctx.?, .kernel) catch {
         self.udev_ctx.?.deinit();
         self.udev_ctx = null;
         return;
     };
-    mon.addMatchSubsystemDevtype("input", null) catch |err| {
-        std.log.warn("input: monitor filter failed ({}), continuing without hotplug", .{err});
+    mon.addMatchSubsystemDevtype("input", null) catch {
         mon.deinit();
         self.udev_ctx.?.deinit();
         self.udev_ctx = null;
@@ -394,8 +387,7 @@ fn enumerateAndOpen(self: *Input, gpa: std.mem.Allocator, io: std.Io, sess: *ses
         const sysname = dev.sysname();
         if (!std.mem.startsWith(u8, sysname, "event")) continue;
         const node = dev.devnode() orelse continue;
-        const fd = sess.openDevice(node) catch |err| {
-            std.log.warn("input: openDevice {s} failed: {s}", .{ node, @errorName(err) });
+        const fd = sess.openDevice(node) catch {
             continue;
         };
         // addDeviceFd is non-owning (owns_fd=false). If it rejects the fd
@@ -403,8 +395,7 @@ fn enumerateAndOpen(self: *Input, gpa: std.mem.Allocator, io: std.Io, sess: *ses
         // it and will close it on sess.deinit - just skip this device. A probe
         // reads the kernel through ioctls, so a device that disappears mid-probe
         // must cost us that one device, not the whole enumeration.
-        const h = self.ctx.addDeviceFd(fd) catch |err| {
-            std.log.warn("input: addDeviceFd {s} failed: {s}", .{ node, @errorName(err) });
+        const h = self.ctx.addDeviceFd(fd) catch {
             continue;
         };
         self.applyConfig(h);

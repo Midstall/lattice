@@ -148,7 +148,6 @@ fn onGetTabletSeat(client_data: ?*anyopaque, resource: *Object, tablet_seat_id: 
         resource.version,
         tablet_seat_id,
     ) catch {
-        std.log.err("tablet: failed to create ZwpTabletSeatV2 resource", .{});
         return;
     };
     tv2.ZwpTabletSeatV2.setImplementation(seat_res, &ctx.seat_impl, ctx, onSeatResourceDestroyed);
@@ -161,7 +160,6 @@ fn onGetTabletSeat(client_data: ?*anyopaque, resource: *Object, tablet_seat_id: 
         resource.version,
         tablet_id,
     ) catch {
-        std.log.err("tablet: failed to create ZwpTabletV2 resource", .{});
         return;
     };
     tv2.ZwpTabletV2.setImplementation(tablet_res, &ctx.tablet_impl, ctx, onTabletResourceDestroyed);
@@ -181,7 +179,6 @@ fn onGetTabletSeat(client_data: ?*anyopaque, resource: *Object, tablet_seat_id: 
         resource.version,
         tool_id,
     ) catch {
-        std.log.err("tablet: failed to create ZwpTabletToolV2 resource", .{});
         return;
     };
     tv2.ZwpTabletToolV2.setImplementation(tool_res, &ctx.tool_impl, ctx, onToolResourceDestroyed);
@@ -198,15 +195,7 @@ fn onGetTabletSeat(client_data: ?*anyopaque, resource: *Object, tablet_seat_id: 
         .seat_res = seat_res,
         .tablet_res = tablet_res,
         .tool_res = tool_res,
-    }) catch |err| {
-        std.log.err("tablet: failed to track TabletClient: {}", .{err});
-    };
-
-    std.log.info("tablet: seat advertised to client (seat={d} tablet={d} tool={d})", .{
-        tablet_seat_id,
-        tablet_id,
-        tool_id,
-    });
+    }) catch {};
 }
 
 // ---------------------------------------------------------------------------

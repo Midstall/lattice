@@ -105,7 +105,7 @@ pub const Wayland = struct {
     /// The keymap and modifier state for the seat's keyboard. Starts empty; the
     /// compositor sends the keymap on wl_keyboard.keymap right after the
     /// keyboard object is bound, and dispatch.zig feeds it in.
-    keyboard: keyboard_mod.KeyboardState = .{},
+    keyboard: keyboard_mod.KeyboardState,
     /// Format/modifier pairs advertised by the compositor during init roundtrip.
     dmabuf_formats: std.ArrayList(DmabufFormat),
     /// Accumulated neutral outputs from the initial roundtrip.
@@ -389,6 +389,9 @@ pub const Wayland = struct {
         self.* = .{
             .gpa = gpa,
             .io = io,
+            // The keymap arrives on wl_keyboard.keymap, which is after this, so
+            // the state starts empty. It still needs the two it cannot learn later.
+            .keyboard = .{ .gpa = gpa, .io = io },
             .conn = conn,
             .imap = imap,
             .registry_id = registry_id,

@@ -21,8 +21,8 @@
             .hash = "drm-0.1.0-ObSCTywHAQAeCZ7R4ZAVRLD63FEkmWIQfOhnfwQwoiBF",
         },
         .xkbcommon = .{
-            .url = "git+https://github.com/Midstall/xkbcommon.zig#674126ad4881198b6c6b59a1dc8293e367276f9c",
-            .hash = "xkbcommon-0.1.0-6Tc_PWJUCACTGQpTkLngQBZcbLQuRCrCspes9nS5VJ1L",
+            .url = "git+https://github.com/Midstall/xkbcommon.zig#5727d27a6bc0d922aa88f025420f1b4a9dd62ece",
+            .hash = "xkbcommon-0.1.0-6Tc_PehiCACqApjXu5KW2of9FEot2c5I3ADdH4kXvUzc",
         },
         .udev = .{
             .url = "git+https://github.com/Midstall/udev.zig#3652cb0ec9d8748f047f02669ba5bd90f907401b",
@@ -37,8 +37,8 @@
             .hash = "libseat-0.1.0-q6LEcyXEAQApF-Trpa1IwPejAhATnE2JlKBGVXsTtL6X",
         },
         .prism = .{
-            .url = "git+https://github.com/Midstall/prism#70b651960462bebaafd1b16078def3b1436ddf76",
-            .hash = "prism-0.1.0-PSE12EzaOACzVMMeBTTt29Asyo9_fvxiMJ64Hao59HXk",
+            .url = "git+https://github.com/Midstall/prism#af4b1a08c0cf31b8c87eeb1966ff3a1aae5af767",
+            .hash = "prism-0.1.0-PSE12HO7OAB8DwHKvMnWIR_efUm7j_Qe0cXRtpjO0J-u",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "lib" },

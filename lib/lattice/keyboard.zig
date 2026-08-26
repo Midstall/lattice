@@ -107,7 +107,7 @@ test "a keycode the keymap does not cover reports no symbol and does not crash" 
 test "an empty keyboard reports nothing and does not crash" {
     // The Wayland backend starts empty: the compositor's keymap has not arrived
     // yet. A key event in that window degrades to a zero keysym, never a crash.
-    var k = KeyboardState{};
+    var k = KeyboardState{ .gpa = std.testing.allocator, .io = std.testing.io };
     const t = try k.translate(30, true);
     try std.testing.expectEqual(@as(u32, 0), t.keysym);
     try std.testing.expect(t.text == null);
@@ -187,8 +187,8 @@ pub const Translated = struct {
 /// object is bound, and a key event in that window degrades to a zero keysym
 /// instead of a crash.
 pub const KeyboardState = struct {
-    gpa: std.mem.Allocator = undefined,
-    io: std.Io = undefined,
+    gpa: std.mem.Allocator,
+    io: std.Io,
     ctx: ?*xkb.Context = null,
     keymap: ?*xkb.Keymap = null,
     state: ?*xkb.State = null,
@@ -212,15 +212,15 @@ pub const KeyboardState = struct {
     /// one. This never fails.
     pub fn initFromEnv(gpa: std.mem.Allocator, io: std.Io, environ: ?*const std.process.Environ.Map) KeyboardState {
         const ctx = xkb.Context.create(gpa, io, .{}, environ) catch
-            return initFromString(gpa, io, minimal_keymap) catch .{};
+            return initFromString(gpa, io, minimal_keymap) catch .{ .gpa = gpa, .io = io };
         const km = xkb.Keymap.newFromNames(ctx, .{}, .text_v1) catch {
             ctx.destroy();
-            return initFromString(gpa, io, minimal_keymap) catch .{};
+            return initFromString(gpa, io, minimal_keymap) catch .{ .gpa = gpa, .io = io };
         };
         const st = xkb.State.create(km) catch {
             km.destroy();
             ctx.destroy();
-            return initFromString(gpa, io, minimal_keymap) catch .{};
+            return initFromString(gpa, io, minimal_keymap) catch .{ .gpa = gpa, .io = io };
         };
         return .{ .gpa = gpa, .io = io, .ctx = ctx, .keymap = km, .state = st };
     }
@@ -293,7 +293,9 @@ pub const KeyboardState = struct {
         if (self.state) |st| st.destroy();
         if (self.keymap) |km| km.destroy();
         if (self.ctx) |ctx| ctx.destroy();
-        self.* = .{};
+        // The allocator and the I/O outlive the keymap: a state that has been
+        // torn down can still be given a new one.
+        self.* = .{ .gpa = self.gpa, .io = self.io };
     }
 };
 
@@ -442,6 +444,56 @@ const remapped_keymap: [:0]const u8 =
     \\  xkb_compat "complete" {};
     \\  xkb_symbols "test" {
     \\    key <AC01> { [ x ] };
+    \\  };
+    \\};
+;
+
+test "a keymap in the shape a compositor sends actually loads" {
+    // The embedded fallback is hand written and small, so it exercised none of
+    // what xkbcomp emits. A real compositor keymap carries dotted defaults in
+    // its compat section and indexed arguments in its private actions, and both
+    // used to fail the parse: the key path then logged "keymap did not parse"
+    // and no typed character ever reached the application.
+    var k = try KeyboardState.initFromString(std.testing.allocator, std.testing.io, minimal_keymap);
+    defer k.deinit();
+    try k.setKeymapFromString(compositor_shaped_keymap);
+
+    const t = try k.translate(30, true); // evdev KEY_A
+    try std.testing.expectEqual(@as(u32, 'a'), t.keysym);
+    try std.testing.expectEqualStrings("a", t.text.?);
+}
+
+/// A keymap carrying the two constructs every xkbcomp keymap has and the
+/// embedded fallback does not: `interpret.` defaults, and an indexed argument
+/// inside a private action.
+const compositor_shaped_keymap: [:0]const u8 =
+    \\xkb_keymap {
+    \\  xkb_keycodes "evdev" {
+    \\    minimum = 8;
+    \\    maximum = 255;
+    \\    <AC01> = 38;
+    \\  };
+    \\  xkb_types "complete" {
+    \\    virtual_modifiers NumLock;
+    \\    type "ALPHABETIC" {
+    \\      modifiers = Shift+Lock;
+    \\      map[Shift] = Level2;
+    \\      map[Lock]  = Level2;
+    \\      level_name[Level1] = "Base";
+    \\      level_name[Level2] = "Caps";
+    \\    };
+    \\  };
+    \\  xkb_compatibility "complete" {
+    \\    virtual_modifiers NumLock,Alt,LevelThree,Super,Meta,Hyper=0x4000;
+    \\    interpret.useModMapMods= AnyLevel;
+    \\    interpret.repeat= False;
+    \\    interpret XF86LogGrabInfo+AnyOfOrNone(all) {
+    \\      repeat= True;
+    \\      action= Private(type=0x86,data[0]=0x50,data[1]=0x72,data[2]=0x47);
+    \\    };
+    \\  };
+    \\  xkb_symbols "us" {
+    \\    key <AC01> { type="ALPHABETIC", [ a, A ] };
     \\  };
     \\};
 ;

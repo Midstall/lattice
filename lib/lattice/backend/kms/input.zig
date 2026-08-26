@@ -93,12 +93,15 @@ pub const Input = struct {
     /// today: lattice does not thread environ into its backends yet, and reading
     /// the process environment inside a library is the global-state pattern the
     /// embedders asked us to remove. Threading environ is the follow-up.
-    keyboard: keyboard_mod.KeyboardState = .{},
+    keyboard: keyboard_mod.KeyboardState,
 
     /// Convenience constructor for the pure-core (no session, no udev).
     /// Does NOT allocate on the heap; caller owns the returned value directly.
-    pub fn init(surface: id.SurfaceId, w: u32, h: u32) Input {
-        return .{ .surface = surface, .bounds_w = w, .bounds_h = h };
+    ///
+    /// Takes the allocator and the I/O for the keyboard state alone: a keymap
+    /// can arrive at any time and there is nowhere later to learn them from.
+    pub fn init(gpa: std.mem.Allocator, io: std.Io, surface: id.SurfaceId, w: u32, h: u32) Input {
+        return .{ .surface = surface, .bounds_w = w, .bounds_h = h, .keyboard = .{ .gpa = gpa, .io = io } };
     }
 
     pub fn setSurface(self: *Input, s: id.SurfaceId, w: u32, h: u32) void {
@@ -130,6 +133,7 @@ pub const Input = struct {
             .gpa = gpa,
             .sess = sess,
             .input_config = input_config,
+            .keyboard = .{ .gpa = gpa, .io = io },
         };
         self.ctx = libinput.Context.init(gpa);
         errdefer self.ctx.deinit();
@@ -174,6 +178,7 @@ pub const Input = struct {
             .bounds_h = h,
             .gpa = gpa,
             .sess = null,
+            .keyboard = .{ .gpa = gpa, .io = std.testing.io },
         };
         self.ctx = libinput.Context.init(gpa);
         return self;
@@ -482,7 +487,7 @@ test "accumulate clamps to bounds" {
 }
 
 test "translate relative motion -> absolute PointerMotion on the surface" {
-    var in = Input.init(id.SurfaceId.from(1), 800, 600);
+    var in = Input.init(std.testing.allocator, std.testing.io, id.SurfaceId.from(1), 800, 600);
     const out = in.translate(.{ .pointer_motion = .{
         .time_ms = 0,
         .dx = 12,
@@ -497,7 +502,7 @@ test "translate relative motion -> absolute PointerMotion on the surface" {
 }
 
 test "translate button and key pass through raw" {
-    var in = Input.init(id.SurfaceId.from(1), 800, 600);
+    var in = Input.init(std.testing.allocator, std.testing.io, id.SurfaceId.from(1), 800, 600);
     const b = in.translate(.{ .pointer_button = .{
         .time_ms = 0,
         .button = 0x110,
@@ -518,7 +523,7 @@ test "translate button and key pass through raw" {
 }
 
 test "translate enriches a key with the keysym, the modifiers and the text" {
-    var in = Input.init(id.SurfaceId.from(1), 800, 600);
+    var in = Input.init(std.testing.allocator, std.testing.io, id.SurfaceId.from(1), 800, 600);
     in.keyboard = try keyboard_mod.KeyboardState.initFromString(
         std.testing.allocator,
         std.testing.io,
@@ -540,7 +545,7 @@ test "translate enriches a key with the keysym, the modifiers and the text" {
 }
 
 test "translate axis folds vertical/horizontal" {
-    var in = Input.init(id.SurfaceId.from(1), 800, 600);
+    var in = Input.init(std.testing.allocator, std.testing.io, id.SurfaceId.from(1), 800, 600);
     const v = in.translate(.{ .pointer_axis = .{
         .time_ms = 0,
         .axis = .vertical,
@@ -554,13 +559,13 @@ test "translate axis folds vertical/horizontal" {
 }
 
 test "translate swallows device add/remove" {
-    var in = Input.init(id.SurfaceId.from(1), 800, 600);
+    var in = Input.init(std.testing.allocator, std.testing.io, id.SurfaceId.from(1), 800, 600);
     try std.testing.expect(in.translate(.{ .device_added = .{ .device_id = 1 } }) == null);
     try std.testing.expect(in.translate(.{ .device_removed = .{ .device_id = 1 } }) == null);
 }
 
 test "translate tablet: normalized axes scale to surface pixels; prox/tip pass through" {
-    var in = Input.init(id.SurfaceId.from(1), 800, 600);
+    var in = Input.init(std.testing.allocator, std.testing.io, id.SurfaceId.from(1), 800, 600);
     const ax = in.translate(.{ .tablet_axis = .{ .time_ms = 0, .x = 0.5, .y = 0.25, .pressure = 0.75 } }).?;
     try std.testing.expect(ax == .tablet_axis);
     try std.testing.expectEqual(@as(f64, 400), ax.tablet_axis.x); // 0.5 * 800
